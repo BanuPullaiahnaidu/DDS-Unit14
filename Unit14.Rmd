@@ -1,0 +1,481 @@
+---
+title: "MSDS 6306: Doing Data Science - Case Study 02"
+author: "Banu"
+date: "2023-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown for Case Study 02
+DDSAnalytics is an analytics company that specializes in talent management solutions for Fortune 100 companies. Talent management is defined as the iterative process of developing and retaining employees. It may include workforce planning, employee training programs, identifying high-potential employees and reducing/preventing voluntary employee turnover (attrition). To gain a competitive edge over its competition, DDSAnalytics is planning to leverage data science for talent management. The executive leadership has identified predicting employee turnover as its first application of data science for talent management. Before the business green lights the project, they have tasked your data science team to conduct an analysis of existing employee data. 
+
+You have been given a dataset (CaseStudy2-data.csv on AWS S3 in the ddsproject1 bucket) to do a data analysis to identify factors that lead to attrition.  You should identify the top three factors that contribute to turnover (backed up by evidence provided by analysis). There may or may not be a need to create derived attributes/variables/features. The business is also interested in learning about any job role specific trends that may exist in the data set (e.g., “Data Scientists have the highest job satisfaction”). You can also provide any other interesting trends and observations from your analysis. The analysis should be backed up by robust experimentation and appropriate visualization. Experiments and analysis must be conducted in R. You will also be asked to build a model to predict attrition.  
+
+#include all Libraries required for the EDA 
+```{r}
+library(class)
+library(caret)
+library(e1071)
+library(naniar)
+library(ggplot2)
+library(GGally)
+library(dplyr)
+library(stringr)
+library(tidyverse)
+library(plotly)
+library(ROCit)
+library(readxl)
+library(knitr)
+```
+
+#Read the Case Study 2 files in .csv and .xlsx format
+
+```{r}
+CS2 = read.csv("/Users/Banu/Documents/MSDS/Unit 14 and 15 Case Study 2/CaseStudy2-data.csv")
+
+CS2Test1 = read.csv("/Users/Banu/Documents/MSDS/Unit 14 and 15 Case Study 2/CaseStudy2CompSet No Attrition.csv")
+
+CS2Test2 = read_excel("/Users/Banu/Documents/MSDS/Unit 14 and 15 Case Study 2/CaseStudy2CompSet No Salary.xlsx")
+```
+
+#Review for any missing values
+```{r}
+gg_miss_var(CS2) + ggtitle("Missing Values in Dataset")
+
+gg_miss_var(CS2Test1) + ggtitle("Missing Values in Dataset")
+```
+
+#describe the datasets - Number of Row and Columns
+```{r}
+dim(CS2)
+dim(CS2Test1)
+```
+
+#describe the dataset's columns
+```{r}
+str(CS2)
+str(CS2Test1)
+```
+
+#Our Objective is to predict attrition, so with the given dataset, let's see how response variable Attrition behaves with respect to other explanotary variables
+
+#Plotting Attrition by Age
+```{r}
+CS2 %>%  ggplot(aes(x = Age, fill = Attrition)) + geom_bar() + ggtitle("Distribution of Age and Attrition") + ylab("Attrition")
+
+CS2 %>%  ggplot(aes(x = Age, fill = Attrition)) + geom_boxplot() + ggtitle("Distribution of Age and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = Age, fill = Attrition)) + geom_bar() + ggtitle("Distribution of Age and Attrition") + ylab("Attrition")
+```
+#The bar graph does suggest that there is more attrition in the age around 30, with a median age of 33 years
+
+
+#Plotting Attrition by DistanceFromHome
+```{r}
+CS2 %>%  ggplot(aes(x = DistanceFromHome, fill = Attrition)) + geom_bar() + ggtitle("Distribution of DistanceFromHome and Attrition") + ylab("Attrition")
+```
+#Looking at the plot, Distance From Home is not significant in determining Attrition, 
+
+#Plotting Attrition by Daily, Hourly, Monthly Rate and Monthly Income
+```{r}
+CS2 %>%  ggplot(aes(x = DailyRate, fill = Attrition)) + geom_boxplot() + ggtitle("Distribution of DailyRate and Attrition") + ylab("Attrition")
+
+CS2 %>%  ggplot(aes(x = HourlyRate, fill = Attrition)) + geom_boxplot() + ggtitle("Distribution of HourlyRate and Attrition") + ylab("Attrition")
+
+CS2 %>%  ggplot(aes(x = MonthlyRate, fill = Attrition)) + geom_boxplot() + ggtitle("Distribution of MonthlyRate and Attrition") + ylab("Attrition")
+
+CS2 %>%  ggplot(aes(x = MonthlyIncome, fill = Attrition)) + geom_boxplot() + ggtitle("Distribution of MonthlyIncome and Attrition") + ylab("Attrition")
+
+CS2 %>% group_by(Attrition) %>% summarise(median(DailyRate))
+CS2 %>% group_by(Attrition) %>% summarise(median(HourlyRate))
+CS2 %>% group_by(Attrition) %>% summarise(median(MonthlyRate))
+CS2 %>% group_by(Attrition) %>% summarise(median(MonthlyIncome))
+
+```
+#Looking at the median values of all the four variables, there seems to be a correlation between Salary and Attrition, that lower salary employees are more likely to leave
+
+#Plotting Attrition by YearsSinceLastPromotion
+```{r}
+CS2 %>%  ggplot(aes(x = YearsSinceLastPromotion, fill = Attrition)) + geom_bar() + ggtitle("Distribution of YearsSinceLastPromotion and Attrition") + ylab("Attrition")
+
+CS2 %>% group_by(Attrition) %>% summarise(mean(YearsSinceLastPromotion))
+
+CS2 %>% filter(Attrition == "Yes") %>%ggplot(aes(x = YearsSinceLastPromotion, fill = Attrition)) + geom_bar() + ggtitle("Distribution of YearsSinceLastPromotion and Attrition") + ylab("Attrition")
+
+```
+#One would think that if an employee is not promoted for a long time, then they would leave, but the plot does not suggest that relation
+
+#Plotting Attrition by TrainingTimesLastYear
+```{r}
+CS2 %>%  ggplot(aes(x = TrainingTimesLastYear, fill = Attrition)) + geom_bar() + ggtitle("Distribution of TrainingTimesLastYear and Attrition") + ylab("Attrition")
+
+CS2 %>% group_by(Attrition) %>% summarise(mean(TrainingTimesLastYear))
+
+CS2 %>% filter(Attrition == "Yes") %>%ggplot(aes(x = TrainingTimesLastYear, fill = Attrition)) + geom_bar() + ggtitle("Distribution of TrainingTimesLastYear and Attrition") + ylab("Attrition")
+
+```
+#Plot does not suggest that Training Time influences Attrition
+
+#Plotting Attrition by PercentSalaryHike
+```{r}
+CS2 %>% ggplot(aes(x = PercentSalaryHike, fill = Attrition)) + geom_bar() + ggtitle("Distribution of PercentSalaryHike and Attrition") + ylab("Attrition")
+
+CS2 %>% group_by(Attrition) %>% summarise(median(PercentSalaryHike))
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = PercentSalaryHike, fill = Attrition)) + geom_bar() + ggtitle("Distribution of PercentSalaryHike and Attrition") + ylab("Attrition")
+
+```
+#Looking at the data and plot, employees with lower Percent Salary Hike are more likely to quit
+
+#Plotting Attrition by TotalWorkingYears
+```{r}
+CS2 %>% ggplot(aes(x = TotalWorkingYears, fill = Attrition)) + geom_bar() + ggtitle("Distribution of TotalWorkingYears and Attrition") + ylab("Attrition")
+
+CS2 %>% group_by(Attrition) %>% summarise(median(TotalWorkingYears))
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = TotalWorkingYears, fill = Attrition)) + geom_bar() + ggtitle("Distribution of TotalWorkingYears and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the employeers with more Total Working Years are less likely to quit
+
+#Plotting Attrition by YearsAtCompany
+```{r}
+CS2 %>% ggplot(aes(x = YearsAtCompany, fill = Attrition)) + geom_bar() + ggtitle("Distribution of YearsAtCompany and Attrition") + ylab("Attrition")
+
+CS2 %>% group_by(Attrition) %>% summarise(median(YearsAtCompany))
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = YearsAtCompany, fill = Attrition)) + geom_bar() + ggtitle("Distribution of YearsAtCompany and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the employeers with more Years at the Compaany are less likely to quit
+
+#Plotting Attrition by YearsInCurrentRole
+```{r}
+CS2 %>% ggplot(aes(x = YearsInCurrentRole, fill = Attrition)) + geom_bar() + ggtitle("Distribution of YearsInCurrentRole and Attrition") + ylab("Attrition")
+
+CS2 %>% group_by(Attrition) %>% summarise(median(YearsInCurrentRole))
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = YearsInCurrentRole, fill = Attrition)) + geom_bar() + ggtitle("Distribution of YearsInCurrentRole and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the employeers with less Years in current role are more likely to quit
+
+#Plotting Attrition by JobLevel
+```{r}
+CS2 %>% ggplot(aes(x = JobLevel, fill = Attrition)) + geom_bar() + ggtitle("Distribution of JobLevel and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = JobLevel, fill = Attrition)) + geom_bar() + ggtitle("Distribution of JobLevel and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the employees at Lower Job Level are more likely to quit
+
+#Plotting Attrition by MaritalStatus
+```{r}
+CS2 %>% ggplot(aes(x = MaritalStatus, fill = Attrition)) + geom_bar() + ggtitle("Distribution of MaritalStatus and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = MaritalStatus, fill = Attrition)) + geom_bar() + ggtitle("Distribution of MaritalStatus and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the single employees are slightly more likely to quit
+
+#Plotting Attrition by JobSatisfaction
+```{r}
+CS2 %>% ggplot(aes(x = JobSatisfaction, fill = Attrition)) + geom_bar() + ggtitle("Distribution of JobSatisfaction and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = JobSatisfaction, fill = Attrition)) + geom_bar() + ggtitle("Distribution of JobSatisfaction and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the level of Job Satisfaction is not playing a significant role in Attrition
+
+#Plotting Attrition by RelationshipSatisfaction
+```{r}
+CS2 %>% ggplot(aes(x = RelationshipSatisfaction, fill = Attrition)) + geom_bar() + ggtitle("Distribution of RelationshipSatisfaction and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = RelationshipSatisfaction, fill = Attrition)) + geom_bar() + ggtitle("Distribution of RelationshipSatisfaction and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the level of RelationshipSatisfaction is not playing a significant role in Attrition
+
+#Plotting Attrition by NumCompaniesWorked
+```{r}
+CS2 %>% ggplot(aes(x = NumCompaniesWorked, fill = Attrition)) + geom_bar() + ggtitle("Distribution of NumCompaniesWorked and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = NumCompaniesWorked, fill = Attrition)) + geom_bar() + ggtitle("Distribution of NumCompaniesWorked and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the level of Num of Companies worked is not playing a significant role in Attrition
+
+#Plotting Attrition by BusinessTravel
+```{r}
+CS2 %>% ggplot(aes(x = BusinessTravel, fill = Attrition)) + geom_bar() + ggtitle("Distribution of BusinessTravel and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = BusinessTravel, fill = Attrition)) + geom_bar() + ggtitle("Distribution of BusinessTravel and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the Business Travel is not influencing Attrition
+
+#Plotting Attrition by StockOptionLevel
+```{r}
+CS2 %>% ggplot(aes(x = StockOptionLevel, fill = Attrition)) + geom_bar() + ggtitle("Distribution of StockOptionLevel and Attrition") + ylab("Attrition")
+
+CS2 %>% filter(Attrition == "Yes") %>% ggplot(aes(x = StockOptionLevel, fill = Attrition)) + geom_bar() + ggtitle("Distribution of StockOptionLevel and Attrition") + ylab("Attrition")
+
+```
+#Plot does suggest the employees with lower stock options are more likely to quit
+
+##Reviewing several of the attributes and their relationship to Attrition, it looks there these are the ones that have a significant influence on Attrition.
+Age
+Income
+JobLevel
+PercentSalaryHike
+StockOptionLevel
+TotalWorkingYears
+YearsAtACompany
+YearsInCurrentRole
+
+#Plot Percentage Attrition by JobLevel filled by StockOptionLevel
+```{r}
+CS2 %>% group_by(StockOptionLevel, JobLevel, Attrition) %>% summarise(JRCount = n()) %>% group_by(JobLevel) %>% mutate(PA = JRCount/sum(JRCount)) %>% filter(Attrition == "Yes") %>% ggplot(aes(x = JobLevel, y = PA,fill = StockOptionLevel)) + geom_bar(stat="identity") + ggtitle("Distribution of JobLevel by  Attrition") + ylab("Attrition") + xlab("JobLevel")
+ 
+```
+#Plot shows highest % of attrition at 26% for Job Level 1
+
+#Plot Percentage Attrition by JobRole filled by StockOptionLevel
+```{r}
+CS2 %>% group_by(StockOptionLevel, JobRole, Attrition) %>% summarise(JRCount = n()) %>% group_by(JobRole) %>% mutate(PA = JRCount/sum(JRCount)) %>% filter(Attrition == "Yes") %>% ggplot(aes(x = JobRole, y = PA,fill = StockOptionLevel)) + geom_bar(stat="identity") + ggtitle("Distribution of JobRole by  Attrition") + ylab("Attrition") + xlab("JobRole")
+ 
+```
+#Plot shows highest % of attrition at 45% for Job Role Sales Representatives
+
+#Plot Percentage Attrition by JobRole filled by StockOptionLevel
+```{r}
+CS2 %>% group_by(StockOptionLevel, JobLevel, Attrition) %>% summarise(JRCount = n()) %>% group_by(JobLevel) %>% mutate(PA = JRCount/sum(JRCount)) %>% filter(Attrition == "Yes") %>% ggplot(aes(x = JobLevel, y = PA,fill = StockOptionLevel)) + geom_bar(stat="identity") + ggtitle("Distribution of JobLevel by  Attrition") + ylab("Attrition") + xlab("JobLevel")
+ 
+```
+#Plot shows highest % of attrition at 26% for Job Level 1
+
+#Plot Percentage Attrition by PercentSalaryHike filled by JobLevel
+```{r}
+CS2 %>% group_by(JobLevel, PercentSalaryHike, Attrition) %>% summarise(JRCount = n()) %>% group_by(PercentSalaryHike) %>% mutate(PA = JRCount/sum(JRCount)) %>% filter(Attrition == "Yes") %>% ggplot(aes(x = PercentSalaryHike, y = PA,fill = JobLevel)) + geom_bar(stat="identity") + ggtitle("Distribution of PercentSalaryHike by  Attrition") + ylab("Attrition") + xlab("PercentSalaryHike")
+ 
+```
+#Plot shows highest % of Salary Hikes were given to employees at Job Level 1 and 2
+
+#After using the above variables in the KNN and NB models, I have chosen the following explanotary vairables to predit Attrition
+
+#JobLevel , StockOptionLevel and YearsAtCompany
+
+#These three variables gave balanced values for Accuracy, Specificity and Sensitivity
+
+
+#Trainign using KNN Model with probability of 50% and 30% for the dataset as given, which is unbalanced
+```{r}
+classifications = knn(CS2[,c(16,29,33)],CS2[c(16,29,33)],CS2[,3], prob = TRUE, k = 10)
+
+table(classifications,CS2[,3])
+CM = confusionMatrix(table(classifications,CS2[,3]))
+CM
+
+#Get probs
+probs = ifelse(classifications == "Yes",attributes(classifications)$prob, 1- attributes(classifications)$prob)
+
+#Threshold
+NewClass = ifelse(probs > .3, "Yes", "No")
+table(NewClass,CS2[,3])
+CM = confusionMatrix(table(NewClass,CS2[,3]))
+CM
+
+# ROC
+## Warning: package 'ROCit' was built under R version 3.5.2
+ROCit_obj_fifty <- rocit(score=as.numeric(classifications),class=CS2[,3])
+plot(ROCit_obj_fifty)
+
+ROCit_obj_fifty$AUC
+
+## Warning: package 'ROCit' was built under R version 3.5.2
+ROCit_obj_thirty <- rocit(score=as.numeric(as.factor(NewClass)),class=CS2[,3])
+plot(ROCit_obj_thirty)
+
+ROCit_obj_thirty$AUC
+```
+#using a probability of 30% is giving better results than 50%
+
+#Training using Naive Bayes model for the given unbalanced dataset with a 70/30 split
+```{r}
+splitPerc = .7 #Training / Test split Percentage
+  trainI = sample(seq(1:length(CS2$ID)),round(.7*length(CS2$ID)))
+train = CS2[trainI,]
+test = CS2[-trainI,]
+model = naiveBayes(train[,c(16,29,33)],train$Attrition)
+table(predict(model,test[,c(16,29,33)]),test$Attrition)
+CM = confusionMatrix(table(predict(model,test[,c(16,29,33)]),test$Attrition))
+CM
+```
+
+#Undersampling and using KNN and NB to predit
+```{r}
+summary(CS2$Attrition)
+CS2 %>% group_by(Attrition) %>% summarise(n())
+```
+
+```{r}
+OnlyNo = CS2 %>% filter(Attrition == "No")
+OnlyNoUnder = OnlyNo[sample(seq(1,730,1),140),]
+
+UnderSamp = rbind(CS2 %>% filter(Attrition == "Yes"), OnlyNoUnder)
+dim(UnderSamp)
+```
+
+```{r}
+splitPerc = .7 #Training / Test split Percentage
+  trainI = sample(seq(1:length(UnderSamp$ID)),round(.7*length(UnderSamp$ID)))
+train = UnderSamp[trainI,]
+test = UnderSamp[-trainI,]
+model = naiveBayes(train[,c(16,29,33)],train$Attrition)
+table(predict(model,test[,c(16,29,33)]),test$Attrition)
+CM = confusionMatrix(table(predict(model,test[,c(16,29,33)]),test$Attrition))
+CM
+```
+```{r}
+
+classifications = knn(UnderSamp[,c(16,29,33)],UnderSamp[c(16,29,33)],UnderSamp[,3], prob = TRUE, k = 5)
+
+table(classifications,UnderSamp[,3])
+CM = confusionMatrix(table(classifications,UnderSamp[,3]))
+CM
+
+ROCit_obj <- rocit(score=as.numeric(classifications),class=UnderSamp[,3])
+plot(ROCit_obj)
+
+ROCit_obj$AUC
+```
+#Oversampling and using KNN and NB
+
+```{r}
+OnlyYes = CS2 %>% filter(Attrition == "Yes")
+OnlyYesOver = rbind(OnlyYes,OnlyYes[sample(seq(1,140,1),(730-140),replace = TRUE),])
+dim(OnlyYesOver)
+
+OverSamp = rbind(CS2 %>% filter(Attrition == "No"), OnlyYesOver)
+dim(OverSamp)
+
+splitPerc = .7 #Training / Test split Percentage
+  trainI = sample(seq(1:length(OverSamp$ID)),round(.7*length(OverSamp$ID)))
+train = OverSamp[trainI,]
+test = OverSamp[-trainI,]
+model = naiveBayes(train[,c(16,29,33)],train$Attrition)
+table(predict(model,test[,c(16,29,33)]),test$Attrition)
+CM = confusionMatrix(table(predict(model,test[,c(16,29,33)]),test$Attrition))
+CM
+```
+```{r}
+classifications = knn(OverSamp[,c(16,29,33)],OverSamp[c(16,29,33)],OverSamp[,3], prob = TRUE, k = 5)
+
+table(classifications,OverSamp[,3])
+CM = confusionMatrix(table(classifications,OverSamp[,3]))
+CM
+
+ROCit_obj <- rocit(score=as.numeric(classifications),class=OverSamp[,3])
+plot(ROCit_obj)
+
+ROCit_obj$AUC
+
+```
+
+#Comparison of the models and methods wrt Accuracy, Sensitivity and Specificity
+```{r}
+# Read data from the Excel file
+Comprison <- read_excel("/Users/Banu/Documents/SMU MSDS/MSDS_6306_DoingDataScience/Unit14/Comparison.xlsx")
+
+# Display the data as a table using kable
+kable(Comprison)
+```
+
+#Predit the Test Data using the KNN OverSampling Model
+```{r}
+CS2Test1 <- CS2Test1 %>% mutate(Attrition = knn(OverSamp[,c(16,29,33)],CS2Test1[c(15,28,32)],OverSamp[,3], prob = TRUE, k = 5))
+
+#Plot Percentage Attrition by JobRole filled by StockOptionLevel
+
+CS2Test1 %>% group_by(StockOptionLevel, JobLevel, Attrition) %>% summarise(JRCount = n()) %>% group_by(JobLevel) %>% mutate(PA = JRCount/sum(JRCount)) %>% filter(Attrition == "Yes") %>% ggplot(aes(x = JobLevel, y = PA,fill = StockOptionLevel)) + geom_bar(stat="identity") + ggtitle("Distribution of JobLevel by  Attrition") + ylab("Attrition") + xlab("JobLevel")
+
+
+CS2Attrition <- CS2Test1 %>% select(ID, Attrition)
+
+#write the predictions to a file
+write.csv(CS2Attrition, file = "/Users/Banu/Documents/SMU MSDS/MSDS_6306_DoingDataScience/Unit14/Case2PredictionsPullaiahnaiduAttrition.csv", row.names = FALSE)
+```
+
+#Predict Salary
+```{r}
+CS2 %>% 
+  ggplot(aes(x = YearsAtCompany, y = MonthlyIncome)) + geom_point() + ggtitle("CS2: MonthlyIncome v. YearsAtCompany") + geom_smooth(method = "lm") 
+
+CS2 %>% 
+  ggplot(aes(x = JobLevel, y = MonthlyIncome)) + geom_point() + ggtitle("CS2: MonthlyIncome v. JobLevel") + geom_smooth(method = "lm") 
+
+CS2 %>% 
+  ggplot(aes(x = TotalWorkingYears, y = MonthlyIncome)) + geom_point() + ggtitle("CS2: MonthlyIncome v. TotalWorkingYears") + geom_smooth(method = "lm") 
+
+Model_fit = lm(MonthlyIncome~JobLevel, data = CS2)
+summary(Model_fit)
+confint(Model_fit)
+Model_Preds = predict(Model_fit, newdata = CS2)
+#as.data.frame(Model_Preds)
+RMSE = sqrt(mean((CS2$MonthlyIncome - Model_Preds)^2))
+RMSE
+
+Model1_fit = lm(MonthlyIncome~JobLevel+TotalWorkingYears, data = CS2)
+summary(Model1_fit)
+confint(Model1_fit)
+Model1_Preds = predict(Model1_fit, newdata = CS2)
+#as.data.frame(Model1_Preds)
+RMSE1 = sqrt(mean((CS2$MonthlyIncome - Model1_Preds)^2))
+RMSE1
+
+
+Model2_fit = lm(MonthlyIncome~JobLevel+TotalWorkingYears+YearsAtCompany, data = CS2)
+summary(Model2_fit)
+confint(Model2_fit)
+Model2_Preds = predict(Model2_fit, newdata = CS2)
+#as.data.frame(Model2_Preds)
+RMSE2 = sqrt(mean((CS2$MonthlyIncome - Model2_Preds)^2))
+RMSE2
+
+```
+
+#Choosing to predit the test dataset using Model2 since it has a best RMSE
+```{r}
+Model1_fit = lm(MonthlyIncome~JobLevel+TotalWorkingYears+YearsAtCompany, data = CS2)
+summary(Model1_fit)
+confint(Model1_fit)
+Model1_Preds = predict(Model1_fit, newdata = CS2Test2)
+#as.data.frame(Model1_Preds)
+MSPE1 = sqrt(mean((CS2$MonthlyIncome - Model1_Preds)^2))
+MSPE1
+```
+
+#Write the Salary predictions to a file
+```{r}
+MonthlyIncome = predict(Model1_fit, newdata = CS2Test2)
+Model1_Preds_df <- as.data.frame(round(MonthlyIncome))
+names(Model1_Preds_df) <- "MonthlyIncome"
+CS2Test2_pred <- cbind(CS2Test2, Model1_Preds_df)
+
+CS2Test2_pred %>% 
+  ggplot(aes(x = YearsAtCompany, y = MonthlyIncome)) + geom_point() + ggtitle("CS2: MonthlyIncome v. YearsAtCompany") + geom_smooth(method = "lm") 
+
+CS2Test2_pred %>% 
+  ggplot(aes(x = JobLevel, y = MonthlyIncome)) + geom_point() + ggtitle("CS2: MonthlyIncome v. JobLevel") + geom_smooth(method = "lm") 
+
+CS2Test2_pred %>% 
+  ggplot(aes(x = TotalWorkingYears, y = MonthlyIncome)) + geom_point() + ggtitle("CS2: MonthlyIncome v. TotalWorkingYears") + geom_smooth(method = "lm") 
+
+CS2Salary <- CS2Test2_pred %>% select(ID, MonthlyIncome)
+
+#write the predictions to a file
+write.csv(CS2Salary, file = "/Users/Banu/Documents/SMU MSDS/MSDS_6306_DoingDataScience/Unit14/Case2PredictionsPullaiahnaiduSalary.csv", row.names = FALSE)
+```
