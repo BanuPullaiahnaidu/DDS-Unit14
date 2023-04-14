@@ -19,5 +19,7 @@ Pullaiahnaidu_CaseStudy02.pptx
 ### Case Study 02 Word Doc with Video, GitHub and Shiny R links
 
 #https://banupullaiahnaidu.github.io/
+
 #https://banu.shinyapps.io/CaseStudy02/
+
 #https://youtu.be/-TyDZHMKDGE
